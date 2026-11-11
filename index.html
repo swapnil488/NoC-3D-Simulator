@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Interactive 3D model of an 8x8 Network on Chip: Mesh, Diagonal Mesh and Inverted-Z Mesh with XY, DyAD and Q routing.">
+<title>NoC 3D Simulator</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+[hidden] { display: none !important; }
+</style>
+<style>
+/* Layout: control panel on the left, the 3D chip fills the rest; stacks on phones. */
+:root {
+  --bg: #f3f5f8; --panel: #ffffff; --fg: #18212f; --muted: #5b6676; --line: #d5dbe4;
+  --accent: #1f6fd0; --accent-fg: #ffffff;
+  --scene-bg: #e9edf3; --link: #9aa6b8; --diag: #1f6fd0; --router: #c3ccd9; --hot: #e2542c; --core: #7d8aa0; --mark: #1f6fd0;
+  --f-display: "Space Grotesk", "Segoe UI", sans-serif; --f-body: "Inter", system-ui, sans-serif; --f-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0e131b; --panel: #161d28; --fg: #e6ebf2; --muted: #96a2b4; --line: #2a3443;
+  --accent: #5aa2f2; --accent-fg: #08111d;
+  --scene-bg: #0a0f16; --link: #4a586c; --diag: #5aa2f2; --router: #34404f; --hot: #ff7043; --core: #6f7f96; --mark: #5aa2f2;
+  color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0e131b; --panel: #161d28; --fg: #e6ebf2; --muted: #96a2b4; --line: #2a3443;
+  --accent: #5aa2f2; --accent-fg: #08111d;
+  --scene-bg: #0a0f16; --link: #4a586c; --diag: #5aa2f2; --router: #34404f; --hot: #ff7043; --core: #6f7f96; --mark: #5aa2f2;
+  color-scheme: dark }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--fg); font-family: var(--f-body); font-size: 14px; line-height: 1.45;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 14px; box-sizing: border-box; }
+#app { display: grid; grid-template-columns: 310px minmax(0, 1fr); gap: 14px; height: 100%; }
+#panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+h1 { font-family: var(--f-display); font-size: 21px; font-weight: 700; margin: 0; text-wrap: balance; }
+.lede { color: var(--muted); margin: 0; font-size: 13px; }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field > label, .cap { font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.seg { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { flex: 1; padding: 8px 4px; background: transparent; color: var(--fg); border: 0; border-right: 1px solid var(--line); font: 500 13px var(--f-body); cursor: pointer; }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); }
+select, .btn { font: 500 13px var(--f-body); color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.btn { cursor: pointer; }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+.row { display: flex; justify-content: space-between; align-items: baseline; }
+.val { font-family: var(--f-mono); font-size: 12px; }
+.hint { font-size: 12.5px; color: var(--muted); margin: 0; }
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.stat { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.stat b { display: block; font: 500 18px var(--f-mono); font-variant-numeric: tabular-nums; }
+.stat span { font-size: 11.5px; color: var(--muted); }
+.legend { display: grid; gap: 5px; font-size: 12.5px; color: var(--muted); }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 8px; vertical-align: -1px; }
+.btns { display: flex; gap: 8px; }
+.btns .btn { flex: 1; }
+#stage { position: relative; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; min-height: 340px; background: var(--scene-bg); }
+#stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+#tip { position: absolute; left: 12px; bottom: 10px; font-size: 12px; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+#mode { position: absolute; left: 12px; top: 10px; font: 500 12px var(--f-mono); color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+@media (max-width: 760px) {
+  html, body { height: auto; }
+  #app { grid-template-columns: minmax(0, 1fr); height: auto; }
+  #stage { height: 62vh; order: -1; }
+  #panel { overflow: visible; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="panel">
+    <h1>How a Network on Chip moves data</h1>
+    <p class="lede">An 8x8 chip. Each tile has a core (top) and a router (bottom). Packets travel as trains of 5 flits, hopping router to router.</p>
+
+    <div class="field">
+      <label id="lt">Topology</label>
+      <div class="seg" role="group" aria-labelledby="lt">
+        <button id="t-mesh" data-topo="mesh" aria-pressed="true">Mesh</button>
+        <button id="t-dmesh" data-topo="dmesh" aria-pressed="false">Diagonal</button>
+        <button id="t-iz" data-topo="iz" aria-pressed="false">Inverted-Z</button>
+      </div>
+      <p class="hint" id="topoHint"></p>
+    </div>
+
+    <div class="field">
+      <label for="algo">Routing algorithm</label>
+      <select id="algo">
+        <option value="fixed">Fixed path: XY / diagonal-first</option>
+        <option value="dyad">DyAD: avoids busy routers</option>
+        <option value="q">Q routing: learns the fastest way</option>
+      </select>
+      <p class="hint" id="algoHint"></p>
+    </div>
+
+    <div class="field">
+      <label for="pattern">Traffic</label>
+      <select id="pattern">
+        <option value="random">Uniform Random (every tile sends)</option>
+        <option value="transpose">Transpose (r, c) to (c, r)</option>
+        <option value="butterfly">Butterfly</option>
+        <option value="f063">One flow: tile 0 to tile 63</option>
+        <option value="f756">One flow: tile 7 to tile 56</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <div class="row"><label for="load">Load</label><span class="val" id="loadV"></span></div>
+      <input type="range" id="load" min="5" max="100" step="5" value="30">
+    </div>
+    <div class="field">
+      <div class="row"><label for="speed">Speed</label><span class="val" id="speedV"></span></div>
+      <input type="range" id="speed" min="1" max="10" step="1" value="4">
+    </div>
+    <div class="btns">
+      <button class="btn" id="pause">Pause</button>
+      <button class="btn" id="reset">Restart</button>
+    </div>
+
+    <div>
+      <div class="cap" style="margin-bottom:6px">Live results (last 300 packets)</div>
+      <div class="stats">
+        <div class="stat"><b id="sLat">0</b><span>average latency (cycles)</span></div>
+        <div class="stat"><b id="sHop">0</b><span>average hops</span></div>
+        <div class="stat"><b id="sTp">0</b><span>flits delivered per cycle</span></div>
+        <div class="stat"><b id="sHeld">0</b><span>packets held at source</span></div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <div class="cap">What you see</div>
+      <div><i style="background:var(--core)"></i>Core: creates and receives packets</div>
+      <div><i style="background:var(--router)"></i>Router: passes flits on; turns <span style="color:var(--hot)">orange</span> as its buffers fill</div>
+      <div><i style="background:var(--diag)"></i>Diagonal link</div>
+      <div><i style="background:#eb6834;border-radius:50%"></i>Flit. The big one is the head; the rest follow it (wormhole)</div>
+    </div>
+    <p class="hint">This is a simplified teaching model, so its numbers differ from NIRGAM's, and its DyAD and Q routing are simpler than the project's.</p>
+  </aside>
+  <div id="stage"><div id="mode"></div><div id="tip">Drag to rotate, scroll or pinch to zoom</div></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(function () {
+const N = 8, S = 1.6, CORE_Y = 1.5, CAP = 4, INJ_CAP = 10, PKT = 5, MAXF = 6000;
+const PALETTE = ['#2a78d6', '#eb6834', '#1baf7a', '#b455d6', '#d6a31b', '#d6456b'].map(c => new THREE.Color(c));
+const $ = id => document.getElementById(id);
+const stage = $('stage');
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+// ---------- three.js scene
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+stage.insertBefore(renderer.domElement, stage.firstChild);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 200);
+camera.position.set(9.5, 10.5, 13);
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.4, 0); controls.enableDamping = true; controls.maxPolarAngle = Math.PI * 0.49;
+controls.minDistance = 6; controls.maxDistance = 40;
+scene.add(new THREE.AmbientLight(0xffffff, 0.75));
+const sun = new THREE.DirectionalLight(0xffffff, 0.6); sun.position.set(6, 12, 8); scene.add(sun);
+
+const pos = id => new THREE.Vector3(((id % N) - (N - 1) / 2) * S, 0, (Math.floor(id / N) - (N - 1) / 2) * S);
+const dummy = new THREE.Object3D();
+const routers = new THREE.InstancedMesh(new THREE.BoxGeometry(0.46, 0.2, 0.46), new THREE.MeshLambertMaterial(), N * N);
+const cores = new THREE.InstancedMesh(new THREE.BoxGeometry(0.34, 0.1, 0.34), new THREE.MeshLambertMaterial(), N * N);
+for (let i = 0; i < N * N; i++) {
+  const p = pos(i);
+  dummy.position.copy(p); dummy.scale.set(1, 1, 1); dummy.updateMatrix(); routers.setMatrixAt(i, dummy.matrix);
+  dummy.position.set(p.x, CORE_Y, p.z); dummy.updateMatrix(); cores.setMatrixAt(i, dummy.matrix);
+}
+scene.add(routers, cores);
+const flitMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.075, 10, 8), new THREE.MeshLambertMaterial(), MAXF);
+flitMesh.frustumCulled = false; scene.add(flitMesh);
+const riserMat = new THREE.LineBasicMaterial(), linkMat = new THREE.LineBasicMaterial(), diagMat = new THREE.LineBasicMaterial();
+{
+  const v = [];
+  for (let i = 0; i < N * N; i++) { const p = pos(i); v.push(p.x, 0, p.z, p.x, CORE_Y, p.z); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+  scene.add(new THREE.LineSegments(g, riserMat));
+}
+let linkLines = null, diagLines = null, labels = [];
+
+// ---------- network model
+let topo = 'mesh', pattern = 'random', algo = 'fixed', load = 30, speed = 4, paused = false;
+let R = [], flits = [], dying = [], tick = 0, pktId = 0, recent = [], tpWin = [], held = 0;
+
+function hasDiag(kind) { return topo === 'dmesh' || (topo === 'iz' && kind === 'se'); }
+function neighbors(id) {
+  const r = Math.floor(id / N), c = id % N, out = [];
+  const add = (dr, dc) => { const rr = r + dr, cc = c + dc; if (rr >= 0 && rr < N && cc >= 0 && cc < N) out.push(rr * N + cc); };
+  add(-1, 0); add(1, 0); add(0, -1); add(0, 1);
+  if (hasDiag('se')) { add(1, 1); add(-1, -1); }
+  if (hasDiag('sw')) { add(1, -1); add(-1, 1); }
+  return out;
+}
+// deterministic routing: diagonal while both coordinates differ and that diagonal exists, then XY
+function route(id, dest) {
+  if (id === dest) return 'ej';
+  const r = Math.floor(id / N), c = id % N, dy = Math.sign(Math.floor(dest / N) - r), dx = Math.sign((dest % N) - c);
+  if (dx && dy && hasDiag(dx === dy ? 'se' : 'sw')) return (r + dy) * N + (c + dx);
+  if (dx) return r * N + (c + dx);
+  return (r + dy) * N + c;
+}
+function dist(a, b) {
+  const dx = (b % N) - (a % N), dy = Math.floor(b / N) - Math.floor(a / N), ax = Math.abs(dx), ay = Math.abs(dy);
+  if (topo === 'dmesh' || (topo === 'iz' && dx * dy > 0)) return Math.max(ax, ay);
+  return ax + ay;
+}
+// Adaptive routing stays deadlock-free by doing all West / North-ish moves (phase 1) before any East / South-ish move.
+function phase1(from, to) { return ((to % N) - (from % N)) + 0.1 * (Math.floor(to / N) - Math.floor(from / N)) < 0; }
+function want(x, f) {
+  if (f.wt === tick || f.wt === Infinity) return f.w;
+  f.wt = tick;
+  const d = f.pk.dest;
+  if (x.id === d) return f.w = 'ej';
+  if (algo === 'fixed') return f.w = route(x.id, d);
+  const here = dist(x.id, d), L = x.nb.length;
+  let c = [];
+  for (let j = 0; j < L; j++) if (dist(x.nb[j], d) === here - 1) c.push(j);
+  const a = c.filter(j => phase1(x.id, x.nb[j])), b = c.filter(j => !phase1(x.id, x.nb[j]));
+  c = (a.length && !f.pk.p2) ? a : (b.length ? b : c);
+  const cost = algo === 'q'
+    ? j => x.q[d * L + j]
+    : j => R[x.nb[j]].ins[x.id].length + (x.lock[x.nb[j]] !== null ? 2 : 0);
+  let best = c[0];
+  if (algo === 'dyad') {
+    const pref = c.find(j => x.nb[j] === route(x.id, d));
+    if (pref !== undefined) best = pref;
+    if (cost(best) < 2) return f.w = x.nb[best];   // quiet: keep the usual path
+  }
+  for (const j of c) if (cost(j) < cost(best)) best = j;
+  return f.w = x.nb[best];
+}
+function destOf(src) {
+  const r = Math.floor(src / N), c = src % N;
+  if (pattern === 'random') { let d; do { d = Math.floor(Math.random() * N * N); } while (d === src); return d; }
+  if (pattern === 'transpose') return c * N + r;
+  if (pattern === 'butterfly') { const hi = (src >> 5) & 1, lo = src & 1; return (src & 0b011110) | (lo << 5) | hi; }
+  if (pattern === 'f063') return src === 0 ? 63 : -1;
+  if (pattern === 'f756') return src === 7 ? 56 : -1;
+  return -1;
+}
+function build() {
+  R = []; flits = []; dying = []; tick = 0; recent = []; tpWin = []; held = 0;
+  for (let i = 0; i < N * N; i++) {
+    const nb = neighbors(i), ins = { inj: [] }, lock = { ej: null }, rr = { ej: 0 };
+    nb.forEach(n => { ins[n] = []; lock[n] = null; rr[n] = 0; });
+    R.push({ id: i, nb, ins, keys: Object.keys(ins), lock, rr, p: pos(i) });
+  }
+  for (const x of R) {   // Q table: estimated cycles to each destination through each neighbour
+    x.q = new Float32Array(N * N * x.nb.length);
+    for (let d = 0; d < N * N; d++) x.nb.forEach((n, j) => { x.q[d * x.nb.length + j] = dist(n, d) + 1; });
+  }
+  // links
+  if (linkLines) { scene.remove(linkLines); linkLines.geometry.dispose(); }
+  if (diagLines) { scene.remove(diagLines); diagLines.geometry.dispose(); }
+  const a = [], d = [];
+  R.forEach(x => x.nb.forEach(n => { if (n > x.id) {
+    const q = R[n].p, straight = (Math.floor(n / N) === Math.floor(x.id / N)) || (n % N === x.id % N);
+    (straight ? a : d).push(x.p.x, 0, x.p.z, q.x, 0, q.z);
+  } }));
+  const mk = (v, m) => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3)); const l = new THREE.LineSegments(g, m); scene.add(l); return l; };
+  linkLines = mk(a, linkMat); diagLines = mk(d, diagMat);
+  paintCores(); updateHints();
+}
+function slot(router, key, idx, out) {
+  if (key === 'inj') return out.set(router.p.x, 0.28 + idx * 0.115, router.p.z);
+  const u = R[key].p; out.copy(u).sub(router.p).normalize().multiplyScalar(0.36 + idx * 0.17).add(router.p); out.y = 0.14;
+  return out;
+}
+function step() {
+  tick++;
+  // 1. inject new packets
+  const rate = (load / 100) / (2 * PKT) * (pattern[0] === 'f' ? 4 : 1);   // a lone flow sends more often so it is easy to follow
+  for (const x of R) {
+    if (Math.random() >= rate) continue;
+    const dest = destOf(x.id); if (dest < 0 || dest === x.id) continue;
+    if (x.ins.inj.length > INJ_CAP - PKT || flits.length > MAXF - 50) { held++; continue; }
+    const pk = { id: pktId++, dest, born: tick, hops: 0, color: PALETTE[pktId % PALETTE.length] };
+    for (let k = 0; k < PKT; k++) {
+      const f = { pk, head: k === 0, tail: k === PKT - 1, from: new THREE.Vector3(x.p.x, CORE_Y, x.p.z), to: new THREE.Vector3(), cur: new THREE.Vector3() };
+      x.ins.inj.push(f); flits.push(f);
+    }
+  }
+  // 2. decide moves from the state at the start of the cycle
+  const moves = [];
+  for (const x of R) {
+    for (const o in x.lock) {
+      if (x.lock[o] === null) {
+        const ks = x.keys, n = ks.length;
+        for (let j = 0; j < n; j++) {
+          const k = ks[(x.rr[o] + j) % n], f = x.ins[k][0];
+          if (f && f.head && f.wt !== Infinity && String(want(x, f)) === o) { x.lock[o] = k; f.wt = Infinity; x.rr[o] = (x.rr[o] + j + 1) % n; break; }
+        }
+      }
+      const k = x.lock[o]; if (k === null) continue;
+      const f = x.ins[k][0]; if (!f) continue;
+      if (o === 'ej' || R[o].ins[x.id].length < CAP) moves.push([x, o, k, f]);
+    }
+  }
+  // 3. apply
+  for (const f of flits) f.from.copy(f.cur);
+  let delivered = 0;
+  for (const [x, o, k, f] of moves) {
+    x.ins[k].shift();
+    if (f.tail) x.lock[o] = null;
+    if (o === 'ej') {
+      f.dead = true; f.to.set(x.p.x, CORE_Y, x.p.z); dying.push(f); delivered++;
+      if (f.tail) { recent.push([tick - f.pk.born, f.pk.hops]); if (recent.length > 300) recent.shift(); }
+    } else {
+      const y = R[o];
+      y.ins[x.id].push(f);
+      if (f.head) {
+        f.pk.hops++;
+        if (!phase1(x.id, y.id)) f.pk.p2 = true;
+        if (algo === 'q') {
+          const d = f.pk.dest, i = d * x.nb.length + x.nb.indexOf(y.id);
+          let m = 0;
+          if (y.id !== d) { m = Infinity; for (let j = 0; j < y.nb.length; j++) m = Math.min(m, y.q[d * y.nb.length + j]); }
+          x.q[i] += 0.5 * ((tick - (f.arr || f.pk.born)) + 1 + m - x.q[i]);
+        }
+        f.arr = tick; f.wt = -1;
+      }
+    }
+  }
+  flits = flits.filter(f => !f.dead);
+  for (const x of R) for (const k of x.keys) { const q = x.ins[k]; for (let i = 0; i < q.length; i++) slot(x, k, i, q[i].to); }
+  tpWin.push(delivered); if (tpWin.length > 60) tpWin.shift();
+}
+
+// ---------- drawing
+const cRouter = new THREE.Color(), cHot = new THREE.Color(), cCore = new THREE.Color(), cMark = new THREE.Color(), tmpC = new THREE.Color(), white = new THREE.Color('#ffffff');
+function paintCores() {
+  const marks = pattern === 'f063' ? [0, 63] : pattern === 'f756' ? [7, 56] : [];
+  for (let i = 0; i < N * N; i++) cores.setColorAt(i, marks.includes(i) ? cMark : cCore);
+  cores.instanceColor.needsUpdate = true;
+}
+function label(text, id) {
+  const cv = document.createElement('canvas'); cv.width = 128; cv.height = 64;
+  const g = cv.getContext('2d'); g.font = '600 34px Inter, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillStyle = css('--fg'); g.fillText(text, 64, 32);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), transparent: true, depthTest: false }));
+  const p = pos(id); sp.position.set(p.x, CORE_Y + 0.55, p.z); sp.scale.set(1.5, 0.75, 1); scene.add(sp); return sp;
+}
+function applyTheme() {
+  scene.background = new THREE.Color(css('--scene-bg'));
+  linkMat.color.set(css('--link')); riserMat.color.set(css('--link')); riserMat.transparent = true; riserMat.opacity = 0.45;
+  diagMat.color.set(css('--diag'));
+  cRouter.set(css('--router')); cHot.set(css('--hot')); cCore.set(css('--core')); cMark.set(css('--mark'));
+  labels.forEach(l => { scene.remove(l); l.material.map.dispose(); l.material.dispose(); });
+  labels = [[0, 'tile 0'], [7, 'tile 7'], [56, 'tile 56'], [63, 'tile 63']].map(([id, t]) => label(t, id));
+  if (R.length) paintCores();
+}
+function draw(t) {
+  const e = t * t * (3 - 2 * t);
+  let n = 0;
+  const put = f => {
+    f.cur.lerpVectors(f.from, f.to, e);
+    dummy.position.copy(f.cur); const s = f.head ? 1.55 : 1; dummy.scale.set(s, s, s); dummy.updateMatrix();
+    flitMesh.setMatrixAt(n, dummy.matrix);
+    flitMesh.setColorAt(n, f.head ? tmpC.copy(f.pk.color).lerp(white, 0.25) : f.pk.color); n++;
+  };
+  for (const f of flits) put(f);
+  for (const f of dying) put(f);
+  flitMesh.count = n; flitMesh.instanceMatrix.needsUpdate = true; if (flitMesh.instanceColor) flitMesh.instanceColor.needsUpdate = true;
+  for (const x of R) {
+    let occ = 0, cap = 0;
+    for (const k of x.keys) if (k !== 'inj') { occ += x.ins[k].length; cap += CAP; }
+    routers.setColorAt(x.id, tmpC.copy(cRouter).lerp(cHot, Math.min(1, occ / (cap * 0.6))));
+  }
+  routers.instanceColor.needsUpdate = true;
+}
+function hud() {
+  const n = recent.length || 1;
+  $('sLat').textContent = recent.length ? (recent.reduce((s, v) => s + v[0], 0) / n).toFixed(1) : '0';
+  $('sHop').textContent = recent.length ? (recent.reduce((s, v) => s + v[1], 0) / n).toFixed(2) : '0';
+  $('sTp').textContent = (tpWin.reduce((s, v) => s + v, 0) / (tpWin.length || 1)).toFixed(2);
+  $('sHeld').textContent = held;
+}
+const HINTS = {
+  mesh: 'Links only North, South, East, West. Corner to corner needs 14 hops.',
+  dmesh: 'Both diagonals in every square. Corner to corner needs 7 hops, but each router has up to 8 links.',
+  iz: 'One diagonal per square (top-left to bottom-right). Try both single flows: 0 to 63 takes 7 hops, 7 to 56 still takes 14.'
+};
+function updateHints() {
+  $('topoHint').textContent = HINTS[topo];
+  const fixedName = topo === 'mesh' ? 'XY routing' : 'diagonal-first routing';
+  $('mode').textContent = ({ mesh: 'Mesh', dmesh: 'Diagonal Mesh', iz: 'Inverted-Z Mesh' })[topo] + ', ' +
+    ({ fixed: fixedName, dyad: 'DyAD routing', q: 'Q routing' })[algo];
+  $('algoHint').textContent = ({
+    fixed: 'Every packet between the same two tiles takes the same path.',
+    dyad: 'Takes the usual path while it is quiet, and switches to a less busy router when the next one is filling up.',
+    q: 'Each router keeps a table of how long each direction took and sends packets the way that has been fastest. It improves as it runs.'
+  })[algo];
+  $('loadV').textContent = load + ' %'; $('speedV').textContent = speed + 'x';
+}
+
+// ---------- controls
+document.querySelectorAll('[data-topo]').forEach(b => b.addEventListener('click', () => {
+  topo = b.dataset.topo;
+  document.querySelectorAll('[data-topo]').forEach(o => o.setAttribute('aria-pressed', o === b ? 'true' : 'false'));
+  build();
+}));
+$('pattern').addEventListener('change', e => { pattern = e.target.value; build(); });
+$('algo').addEventListener('change', e => { algo = e.target.value; build(); });
+$('load').addEventListener('input', e => { load = +e.target.value; updateHints(); });
+$('speed').addEventListener('input', e => { speed = +e.target.value; updateHints(); });
+$('pause').addEventListener('click', () => { paused = !paused; $('pause').textContent = paused ? 'Play' : 'Pause'; });
+$('reset').addEventListener('click', build);
+
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  renderer.setSize(w, h, false); camera.aspect = w / Math.max(h, 1); camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+new MutationObserver(applyTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+// ---------- main loop
+applyTheme(); build(); resize();
+if (matchMedia('(prefers-reduced-motion: reduce)').matches) { paused = true; $('pause').textContent = 'Play'; }
+for (let i = 0; i < 60; i++) step();           // start with traffic already flowing
+for (const f of flits) { f.from.copy(f.to); f.cur.copy(f.to); }
+let last = performance.now(), acc = 0, frames = 0;
+function loop(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  const dur = 0.5 / speed;
+  if (!paused) {
+    acc += dt;
+    let guard = 0;
+    while (acc >= dur && guard++ < 4) { acc -= dur; dying = []; step(); }
+    if (acc >= dur) acc = 0;
+  }
+  draw(Math.min(1, acc / dur));
+  if (++frames % 15 === 0) hud();
+  controls.update(); renderer.render(scene, camera);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
